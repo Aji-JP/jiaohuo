@@ -21,7 +21,8 @@
   --paper:#111A17; --sheet:#1A2622; --ink:#E6EFEA; --mute:#93A59D;
   --rule:#5DB495; --rule-soft:#2C4038; --stamp:#F0786B; --stamp-soft:#3A211E;
 }
-*,*::before,*::after{box-sizing:inherit}
+*,*::before,*::after{box-sizing:inherit;touch-action:manipulation}
+button{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--paper);color:var(--ink);
   font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
@@ -348,7 +349,8 @@ function toast(id,msg){$(id).textContent=msg;setTimeout(()=>{if($(id).textConten
 
 $('ses').addEventListener('change',e=>{const row=e.target.closest('.ses');if(!row)return;const s=ses[+row.dataset.i],k=e.target.dataset.k;
   if(k==='n')s.n=Math.max(0,+e.target.value||0);else s[k]=e.target.value;if(k==='kind'){if(s.kind==='示範')s.n=1;else if(s.n===1)s.n=5}drawSes();recalc()});
-$('ses').addEventListener('click',e=>{const sb=e.target.closest('[data-step]');if(sb){const s=ses[+sb.closest('.ses').dataset.i];s.n=Math.max(0,(+s.n||0)+(+sb.dataset.step));drawSes();recalc();return}
+$('ses').addEventListener('click',e=>{const sb=e.target.closest('[data-step]');if(sb){const s=ses[+sb.closest('.ses').dataset.i];s.n=Math.max(0,(+s.n||0)+(+sb.dataset.step));const row=sb.closest('.ses');row.querySelector('input[data-k=n]').value=s.n;
+    row.querySelector('.dishes').textContent=s.set?getSet(s.set).d.join('、')+'，'+s.n+' 份':'尚未選題組';recalc();return}
   if(e.target.closest('[data-del]')){ses.splice(+e.target.closest('.ses').dataset.i,1);drawSes();recalc()}});
 $('addSes').onclick=()=>{ses.push({time:ses.length?ses[ses.length-1].time:'上午',kind:'示範',set:'',n:1});drawSes()};
 $('addLine').onclick=()=>{manual.push({text:'',on:true,hint:''});drawLines();const a=$('lines').querySelectorAll('input[type=text]');a[a.length-1].focus()};
