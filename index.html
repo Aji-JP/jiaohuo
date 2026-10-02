@@ -144,7 +144,7 @@ details.tot .dt>div span:first-child{font-weight:700}
 
   <h2>LINE 訊息</h2>
   <div class="row" style="margin-bottom:8px"><label for="head" style="font-size:13px;color:var(--mute)">開頭日期用</label>
-    <select id="head" style="flex:1"><option value="ord">叫貨日</option><option value="del">入貨日</option><option value="cls">上課日</option></select></div>
+    <select id="head" style="flex:1"><option value="del">入貨日</option><option value="ord">叫貨日</option><option value="cls">上課日</option></select></div>
   <textarea id="out" readonly></textarea>
   <div class="acts"><button class="main" id="copy">複製訊息</button><button id="save">存到紀錄</button></div>
   <div class="toast" id="toast" role="status"></div>
@@ -223,7 +223,7 @@ const DR={
 '家鄉肉':{c:'s'},'雞蛋':{c:'s'},'皮蛋':{c:'s'},'熟鹹蛋':{c:'s'},'麵筋泡':{c:'s'},'乾魷魚':{c:'s'},'冬菜':{c:'s'},'炸花生':{c:'s'}
 };
 const ORDER=['大里肌','小排骨','豬絞肉','鱸魚','吳郭魚','花枝','蝦','雞胸','仿雞腿','紅K','紅辣椒','小黃瓜','大黃瓜','蔥','薑','蒜頭','紅蔥頭','乾香菇','乾木耳','老薑','鳳梨片','鹹蛋黃','洋菜','蝦米','家鄉肉','皮蛋','冬菜','乾魷魚','熟鹹蛋','扁魚','盒豆腐','板豆腐','大豆乾','玉米粒','炸花生','麵筋泡','長糯米','桶筍','洋蔥','青椒','西芹','杏鮑菇','四季豆','馬鈴薯','茄子','酸菜心','芹菜','紅甜椒','黃甜椒','九層塔','榨菜','綠豆芽','冬瓜','豆薯','荸薺','大白菜','雞蛋'];
-let S={place:'中正',head:'ord',rules:{},sets:{},hist:[]};
+let S={place:'中正',head:'del',rules:{},sets:{},hist:[]};
 function parseSet(r){return{d:r[0].split(','),i:r[1].replace('@',G).split('|').map(s=>{const a=s.split(' ');return{n:a[0],q:+a[1],u:a[2]||''}}),p:r[2]||''}}
 function getSet(id){return S.sets[id]||parseSet(RAW[id])}
 function unitOf(name){for(const id in RAW){const it=getSet(id).i.find(x=>x.n===name);if(it)return it.u}return''}
@@ -333,7 +333,7 @@ function drawSch(){const sc=curSch();$('sunWrap').hidden=!(sc&&sc.askSun);
     (sc.why.length?'<p>'+sc.why.join('；')+'。</p>':'<p>上課兩天前叫貨、前一天入貨。</p>')+st}
 function drawOut(){const sc=curSch();
   const t=lines.filter(l=>l.on&&!l.stock).concat(manual.filter(l=>l.on),lines.filter(l=>l.on&&l.stock)).map(l=>l.text).filter(x=>x.trim());
-  $('out').value=t.length?message(sc?sc[S.head||'ord']:null,$('place').value||'',t,mode==='am'?'上午':mode==='pm'?'下午':''):'';
+  $('out').value=t.length?message(sc?sc[S.head||'del']:null,$('place').value||'',t,mode==='am'?'上午':mode==='pm'?'下午':''):'';
 }
 function toast(id,msg){$(id).textContent=msg;setTimeout(()=>{if($(id).textContent===msg)$(id).textContent=''},4000)}
 
@@ -408,14 +408,14 @@ $('hist').addEventListener('click',async e=>{const row=e.target.closest('.hist')
   if(e.target.dataset.cp!==undefined){try{await navigator.clipboard.writeText(S.hist[i].text);toast('toast2','已複製。')}catch(err){toast('toast2','無法自動複製，請長按文字複製。')}}});
 $('bkOut').onclick=()=>{$('bk').value=JSON.stringify(S);$('bk').select();toast('toast2','已產生，請複製上面整段文字保存。')};
 $('bkIn').onclick=()=>{try{const v=JSON.parse($('bk').value);if(!v||typeof v!=='object')throw 0;
-  S=Object.assign({place:'中正',head:'ord',rules:{},sets:{},hist:[]},v);persist();init();toast('toast2','已還原。')}catch(e){toast('toast2','這段文字不是有效的備份，請確認有完整貼上。')}};
-$('wipe').onclick=()=>{if(confirm('規則、配菜表修改和紀錄都會清掉，確定嗎？')){S={place:'中正',head:'ord',rules:{},sets:{},hist:[]};persist();init();toast('toast2','已還原成預設。')}};
+  S=Object.assign({place:'中正',head:'del',rules:{},sets:{},hist:[]},v);persist();init();toast('toast2','已還原。')}catch(e){toast('toast2','這段文字不是有效的備份，請確認有完整貼上。')}};
+$('wipe').onclick=()=>{if(confirm('規則、配菜表修改和紀錄都會清掉，確定嗎？')){S={place:'中正',head:'del',rules:{},sets:{},hist:[]};persist();init();toast('toast2','已還原成預設。')}};
 
 document.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',x===b));
   ['order','rules','sets','hist'].forEach(t=>$('t-'+t).hidden=t!==b.dataset.tab);window.scrollTo(0,0)});
 
-function init(){$('place').value=S.place||'中正';$('head').value=S.head||'ord';drawSes();drawRules();drawSet();drawHist();recalc()}
+function init(){$('place').value=S.place||'中正';$('head').value=S.head||'del';drawSes();drawRules();drawSet();drawHist();recalc()}
 load();
 (function(){const d=new Date(),p=n=>String(n).padStart(2,'0');$('date').value=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())})();
 init();
