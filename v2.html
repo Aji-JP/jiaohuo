@@ -100,6 +100,7 @@ details.tot .dt>div span:last-child{font-weight:400;color:var(--mute);font-size:
 details.tot .dt>div span:first-child{font-weight:700}
 /* 合計 */
 .seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin-bottom:6px}
+.seg2{grid-template-columns:1fr 1fr}
 .seg button{border:0;border-radius:0;padding:10px 4px;font-size:14px}
 .seg button+button{border-left:1px solid var(--rule)}
 .seg button[aria-pressed=true]{background:var(--rule);color:var(--sheet);font-weight:700}
@@ -172,7 +173,8 @@ section[hidden]{display:none}
 <h1>中餐丙級叫貨單<small>v2</small></h1>
 
 <section id="t-order">
-  <div class="row" style="margin:8px 0 12px"><label class="lab" for="place" style="flex:none">入貨地點</label><input id="place" type="text" style="flex:1"></div>
+  <div class="row" style="margin:8px 0 12px"><span class="lab" style="flex:none">入貨地點</span>
+    <div class="seg seg2" id="place" role="group" aria-label="入貨地點" style="flex:1;margin:0"><button data-p="中正">中正</button><button data-p="仁武">仁武</button></div></div>
   <h2>上課日與課程 <small>同一天入貨的會合併成一張單</small></h2>
   <div id="days"></div>
   <div class="acts"><button id="addDay">加一天</button><button id="reset" class="x">清空重來</button></div>
@@ -329,7 +331,10 @@ const p2=n=>String(n).padStart(2,'0');
 const iso=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
 function defDate(){const d=new Date();d.setDate(d.getDate()+2);return iso(d)}
 function newDay(date){return{date:date||'',sun:false,ses:[{time:'上午',kind:'操作',set:'',n:5},{time:'下午',kind:'操作',set:'',n:5}]}}
-function newDraft(){return{days:[newDay(defDate())],ed:{},man:{},mode:'all'}}
+const PLACES=['中正','仁武'];
+function newDraft(){return{days:[newDay(defDate())],ed:{},man:{},mode:'all',place:'中正'}}
+function curPlace(){return PLACES.includes(D.place)?D.place:'中正'}
+function drawPlace(){$('place').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.p===curPlace()))}
 function load(){try{let v=JSON.parse(localStorage.getItem(KEY)||'null');
     if(!v){const o=JSON.parse(localStorage.getItem('jiaohuo.v1')||'null');if(o)v={place:o.place,head:o.head,rules:o.rules,sets:o.sets,hist:o.hist}}
     if(v&&typeof v==='object')S=Object.assign(S,v)}catch(e){}
@@ -379,7 +384,7 @@ $('days').addEventListener('click',e=>{const dc=e.target.closest('.day');if(!dc)
 $('addDay').onclick=()=>{const l=D.days[D.days.length-1];let nd='';if(l&&l.date){const x=new Date(l.date+'T00:00:00');x.setDate(x.getDate()+1);nd=iso(x)}
   D.days.push(newDay(nd||defDate()));drawDays();drawCalc();$('days').lastElementChild.scrollIntoView({block:'center'})};
 $('reset').onclick=()=>{if(confirm('清掉目前輸入的日期、課程和手動修改，重新開始？（規則和紀錄不受影響）')){D=newDraft();S.draft=D;drawAll()}};
-$('place').oninput=()=>{S.place=$('place').value;refreshMsgs()};
+$('place').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;D.place=b.dataset.p;drawPlace();refreshMsgs()});
 
 /* ---- 各堂需求 ---- */
 function drawDetail(){let h='';
@@ -409,7 +414,7 @@ function gMsg(g,r){const man=(D.man[g.key]||[]).filter(m=>m.on&&m.text.trim()).m
   if(!t.length)return'';
   const hd=S.head==='ord'?md(g.ord):S.head==='cls'?g.cls.map(md).join('、'):md(g.del);
   const tag=D.mode==='am'?'上午':D.mode==='pm'?'下午':'';
-  return hd+(tag?' '+tag:'')+'. 入'+(S.place||'')+'材料如下：\n'+t.map((x,i)=>(i+1)+'. '+x).join('\n')+'\n非常感謝🙏'}
+  return hd+(tag?' '+tag:'')+'. 入'+curPlace()+'材料如下：\n'+t.map((x,i)=>(i+1)+'. '+x).join('\n')+'\n非常感謝🙏'}
 function staleHTML(l){return l.stale?'<div class="stale"><span>數量變了，系統現在算出「'+esc(l.text)+'」</span><button data-usenew>改用新的</button></div>':''}
 function lineHTML(l){return'<div class="line'+(l.inc?'':' off')+(l.edited?' ed':'')+'" data-key="'+esc(l.key)+'" data-base="'+esc(l.text)+'">'+
   '<input type="checkbox"'+(l.inc?' checked':'')+' aria-label="要叫">'+
@@ -531,7 +536,7 @@ $('wipe').onclick=()=>{if(confirm('規則、配菜表修改和紀錄都會清掉
 function go(tab){document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab));
   ['order','rules','sets','hist'].forEach(t=>$('t-'+t).hidden=t!==tab);$('bar').hidden=tab!=='order';window.scrollTo(0,0)}
 document.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.tab)});
-function drawAll(){$('place').value=S.place||'中正';$('head').value=S.head||'del';drawDays();drawRules();drawSet();drawHist();drawDirty();drawCalc()}
+function drawAll(){drawPlace();$('head').value=S.head||'del';drawDays();drawRules();drawSet();drawHist();drawDirty();drawCalc()}
 load();drawAll();
 </script>
 </body>
