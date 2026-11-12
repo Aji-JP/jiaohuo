@@ -115,6 +115,7 @@ details.tot .dt>div span:first-child{font-weight:500}
 .ban.late{background:var(--stamp);color:#fff;font-weight:600}
 .ban.today{background:var(--warn-soft);color:var(--warn);font-weight:600}
 .ban.ok{color:var(--mute);padding:0 4px;text-align:center}
+.ban.nodate{margin:0 0 12px}
 .sub{padding:16px 16px 6px;font-size:13px;color:var(--mute);font-weight:500;border-top:.5px solid var(--rule-soft)}
 .sub b{color:var(--warn);font-weight:600}
 .line{display:grid;grid-template-columns:24px 1fr;gap:1px 10px;padding:9px 12px 9px 16px;align-items:center;position:relative}
@@ -231,6 +232,8 @@ section[hidden]{display:none}
 
 <script>
 /*CORE-START*/
+// ---- 資料（各頁不同）：題組、每種食材的叫法、叫貨單排列順序 ----
+const APP='bing'; // 備份檔標記：丙級
 const G='紅K 1 條|紅辣椒 1 條|小黃瓜 1 條|大黃瓜 1 份';
 const RAW={
 '301-1':['青椒炒肉絲,茄汁燴魚片,乾煸四季豆','大里肌 130 g|豬絞肉 30 g|鱸魚 1 隻|@|蔥 2 支|薑 80 g|蒜頭 2 粒|蝦米 10 g|冬菜 10 g|洋蔥 0.25 個|青椒 1 個|四季豆 150 g','番茄醬 烏醋 白醋 地瓜粉'],
@@ -270,65 +273,121 @@ const DR={
 '家鄉肉':{c:'s'},'雞蛋':{c:'s'},'皮蛋':{c:'s'},'熟鹹蛋':{c:'s'},'麵筋泡':{c:'s'},'乾魷魚':{c:'s'},'冬菜':{c:'s'},'炸花生':{c:'s'}
 };
 const ORDER=['大里肌','小排骨','豬絞肉','鱸魚','吳郭魚','花枝','蝦','雞胸','仿雞腿','紅K','紅辣椒','小黃瓜','大黃瓜','蔥','薑','蒜頭','紅蔥頭','乾香菇','乾木耳','老薑','鳳梨片','鹹蛋黃','洋菜','蝦米','家鄉肉','皮蛋','冬菜','乾魷魚','熟鹹蛋','扁魚','盒豆腐','板豆腐','大豆乾','玉米粒','炸花生','麵筋泡','長糯米','桶筍','洋蔥','青椒','西芹','杏鮑菇','四季豆','馬鈴薯','茄子','酸菜心','芹菜','紅甜椒','黃甜椒','九層塔','榨菜','綠豆芽','冬瓜','豆薯','荸薺','大白菜','雞蛋'];
+const ROWS=null; // 丙級：叫貨單一律照 ORDER 排序
+/*LOGIC-START*/
+// ↓↓ 以下計算邏輯三個頁面完全相同（index.html／v2.html／yiji.html）。改一頁就要同步改另外兩頁，
+//    npm test 會檢查三頁這一段是否一致。
 let S={place:'中正',head:'del',rules:{},sets:{},hist:[],dirty:false,draft:null};
-function parseSet(r){return{d:r[0].split(','),i:r[1].replace('@',G).split('|').map(s=>{const a=s.split(' ');return{n:a[0],q:+a[1],u:a[2]||''}}),p:r[2]||''}}
-function getSet(id){return S.sets[id]||parseSet(RAW[id])}
-function unitOf(name){for(const id in RAW){const it=getSet(id).i.find(x=>x.n===name);if(it)return it.u}return''}
-function rule(name){const r=Object.assign({t:'sum',c:'o'},DR[name]||{},S.rules[name]||{});if(r.u===undefined)r.u=unitOf(name);return r}
+const APPS={bing:'丙級',yi:'乙級'};
+const TIMES=['上午','下午'],KINDS=['示範','操作'],HEADS=['del','ord','cls'],MODES=['all','am','pm'],RTYPES=['sum','spec','jin','pack','fixed'];
+const own=(o,k)=>o!=null&&Object.prototype.hasOwnProperty.call(o,k);
+const isObj=v=>v!=null&&typeof v==='object'&&!Array.isArray(v);
+const txt=(v,max)=>(typeof v==='string'?v:typeof v==='number'&&isFinite(v)?String(v):'').slice(0,max||2000);
+const cnt=v=>Math.max(0,Math.min(999,Math.floor(+v)||0));
+const pos=v=>{v=+v;return isFinite(v)&&v>0?v:0};
+const fix=x=>Math.round(x*1e6)/1e6;
+const up=x=>Math.ceil(fix(x));
+function parseSet(r){return{d:r[0]?r[0].split(','):[],i:r[1].replace('@',G).split('|').map(s=>{const a=s.split(' ');return{n:a[0],q:+a[1],u:a[2]||''}}),p:r[2]||''}}
+function getSet(id){if(own(S.sets,id)&&isObj(S.sets[id])&&Array.isArray(S.sets[id].i))return S.sets[id];return own(RAW,id)?parseSet(RAW[id]):{d:[],i:[],p:''}}
+function unitOf(name){for(const id in RAW){const it=getSet(id).i.find(x=>x&&x.n===name);if(it)return it.u||''}return''}
+function rule(name){const r=Object.assign({t:'sum',c:'o'},own(DR,name)?DR[name]:{},own(S.rules,name)&&isObj(S.rules[name])?S.rules[name]:{});
+  if(r.u===undefined)r.u=unitOf(name);if(!RTYPES.includes(r.t))r.t='sum';return r}
 function num(v){return String(Math.round(v*100)/100)}
-function frac(q){return q===.5?'1/2':q===.25?'1/4':q===.75?'3/4':num(q)}
+// 0.16667、0.33333 這類近似值還原成 1/6、1/3，避免 6 份 × 0.16667 = 1.00002 被進位成 2
+function snap(q){for(let d=1;d<=12;d++){const n=Math.round(q*d);if(n>0&&Math.abs(q-n/d)<1e-4)return n/d}return q}
+function frac(q){const w=Math.floor(q+1e-3),f=q-w;if(Math.abs(f)<1e-3)return num(q);
+  for(let d=2;d<=12;d++){const n=Math.round(f*d);if(n>0&&n<d&&Math.abs(f*d-n)<2e-3)return(w?w+'又':'')+n+'/'+d}return num(q)}
 function jinText(v){return v===.5?'半斤':num(v)+'斤'}
-function allNames(){const s=new Set();for(const id in RAW)getSet(id).i.forEach(x=>s.add(x.n));Object.keys(S.rules).forEach(n=>s.add(n));
-  return[...s].sort((a,b)=>{const x=ORDER.indexOf(a),y=ORDER.indexOf(b);return(x<0?999:x)-(y<0?999:y)})}
+const byOrder=ord=>(a,b)=>{const x=ord.indexOf(a),y=ord.indexOf(b);return(x<0?1e9:x)-(y<0?1e9:y)};
+function allNames(){const s=new Set();for(const id in RAW)getSet(id).i.forEach(x=>{if(x&&x.n)s.add(x.n)});Object.keys(S.rules).forEach(n=>s.add(n));
+  return[...s].sort(byOrder(ORDER))}
 function compute(ses,carry){
-  carry=carry||{};const left=Object.assign({},carry);
-  const T={},pan=new Set();
-  for(const s of ses){if(!RAW[s.set]||!(s.n>0))continue;const st=getSet(s.set);
-    for(const it of st.i){if(!it.n||!(it.q>0))continue;const t=T[it.n]||(T[it.n]={tot:0,by:{},sp:{}});const q=it.q*s.n;
+  carry=isObj(carry)?carry:{};const left=Object.assign({},carry);
+  const T=Object.create(null),pan=new Set();
+  for(const s of ses||[]){if(!s||!own(RAW,s.set))continue;const n=cnt(s.n);if(!n)continue;const st=getSet(s.set);
+    for(const it of st.i){if(!it||!it.n)continue;const q0=snap(+it.q);if(!(q0>0))continue;
+      const t=T[it.n]||(T[it.n]={tot:0,by:Object.create(null),sp:Object.create(null)});const q=q0*n;
       t.tot+=q;t.by[it.u]=(t.by[it.u]||0)+q;
-      const lb=it.u==='g'?num(it.q)+'g':(it.q===1?(it.u==='副'?'1副':''):frac(it.q));t.sp[lb]=(t.sp[lb]||0)+s.n}
-    st.p.split(/\s+/).filter(Boolean).forEach(x=>pan.add(x))}
+      const lb=it.u==='g'?num(q0)+'g':(q0===1?(it.u==='副'?'1副':''):frac(q0));t.sp[lb]=(t.sp[lb]||0)+n}
+    String(st.p||'').split(/\s+/).filter(Boolean).forEach(x=>pan.add(x))}
+  let ord=ORDER;
+  if(ROWS){ord=[];for(const s of ses||[]){const p=String(s&&s.set||'').split('-')[0];(own(ROWS,p)?ROWS[p]:[]).forEach(n=>{if(!ord.includes(n))ord.push(n)})}}
   const out=[];
-  const names=Object.keys(T).sort((a,b)=>{const x=ORDER.indexOf(a),y=ORDER.indexOf(b);return(x<0?999:x)-(y<0?999:y)});
-  for(const name of names){const t=T[name],r=rule(name),a=r.a||name,stock=r.c==='s',c=stock?0:(carry[name]||0),bu=unitOf(name);
+  for(const name of Object.keys(T).sort(byOrder(ord))){const t=T[name],r=rule(name),a=r.a||name,stock=r.c==='s',c=stock?0:(+carry[name]||0),bu=unitOf(name);
     const need=Object.entries(t.by).map(([u,v])=>num(v)+u).join('＋');
     const rem=Math.max(0,t.tot-c),cov=c>0&&rem<1e-9;
     const ctx=c>0?'；上午剩 '+(c>1e8?'料':num(c)+bu)+(cov?'，應該夠用':''):'';
-    const push=(text,hint)=>out.push({name,k:name,text,hint:(hint||('需 '+need))+ctx,stock});
-    if(r.t==='spec'){for(const lb in t.sp)out.push({name,k:name+'|'+lb,text:a+lb+'✖️'+t.sp[lb],hint:'每份 '+(lb||'1')+'，共 '+t.sp[lb]+' 份',stock})}
-    else if(r.t==='jin'){const gp=+r.g||1,jv=x=>{const g=x*gp;let v=(r.r==='up'?Math.ceil(g/300-1e-9):Math.round(g/300))/2;return v<.5?.5:v};
+    const push=(text,hint)=>out.push({name,k:name,text,hint:(hint||('需 '+need))+ctx,stock,on:!stock&&!cov});
+    if(r.t==='spec'){for(const lb in t.sp)out.push({name,k:name+'|'+lb,text:a+lb+'✖️'+t.sp[lb],hint:'每份 '+(lb||'1')+'，共 '+t.sp[lb]+' 份',stock,on:!stock})}
+    else if(r.t==='jin'){const gp=pos(r.g)||1,jv=x=>{const g=x*gp;let v=(r.r==='up'?up(g/300):Math.round(fix(g/300)))/2;return v<.5?.5:v};
       const v=cov?0:jv(rem);left[name]=Math.max(0,c+v*600/gp-t.tot);
       push(a+'✖️'+jinText(cov?jv(t.tot):v),'需 '+need+(gp!==1?'，約 '+num(t.tot*gp)+'g':'')+'（'+num(t.tot*gp/600)+'斤）')}
-    else if(r.t==='pack'){const per=+r.per||1,n=Math.ceil(rem/per-1e-9);left[name]=c+n*per-t.tot;
-      push(a+'✖️'+(cov?Math.ceil(t.tot/per-1e-9):n)+(r.u||''),'需 '+need+'，每'+(r.u||'個')+'可供 '+per)}
+    else if(r.t==='pack'){const per=pos(r.per)||1,n=up(rem/per);left[name]=c+n*per-t.tot;
+      push(a+'✖️'+(cov?up(t.tot/per):n)+(r.u||''),'需 '+need+'，每'+(r.u||'個')+'可供 '+per)}
     else if(r.t==='fixed'){if(!stock)left[name]=1e9;push(a+'✖️'+(r.f||''))}
-    else{let n=Math.ceil(rem-1e-9);if(n>0&&+r.min&&n<+r.min)n=+r.min;left[name]=c+n-t.tot;
-      push(a+'✖️'+(cov?Math.ceil(t.tot-1e-9):n)+(r.u||''))}
+    else{let n=up(rem);const mn=pos(r.min);if(n>0&&mn&&n<mn)n=mn;left[name]=c+n-t.tot;
+      push(a+'✖️'+(cov?up(t.tot):n)+(r.u||''))}
   }
   return{lines:out,pantry:[...pan],left}
 }
 const WD='日一二三四五六';
 function md(d){return(d.getMonth()+1)+'/'+d.getDate()}
 function mdw(d){return md(d)+'（'+WD[d.getDay()]+'）'}
-function sched(dateStr,sunOpen){if(!dateStr)return null;const cls=new Date(dateStr+'T00:00:00');if(isNaN(cls))return null;
+// 上課前一天入貨、入貨前一天叫貨；週一不入貨；週日只有當天有課（sunOpen）才能收貨
+function sched(dateStr,sunOpen){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof dateStr==='string'?dateStr:'');if(!m)return null;
+  const cls=new Date(+m[1],+m[2]-1,+m[3]);if(isNaN(cls)||cls.getFullYear()!==+m[1]||cls.getMonth()!==+m[2]-1||cls.getDate()!==+m[3])return null;
   const del=new Date(cls);del.setDate(del.getDate()-1);const why=[];
   if(del.getDay()===1){del.setDate(del.getDate()-1);why.push('週一不入貨，提前到週日入貨')}
-  if(del.getDay()===0&&!sunOpen){del.setDate(del.getDate()-1);why.push('週日沒課，再提前到週六入貨')}
+  if(del.getDay()===0&&!sunOpen){del.setDate(del.getDate()-1);why.push(why.length?'週日沒課，再提前到週六入貨':'週日沒課，提前到週六入貨')}
   const ord=new Date(del);ord.setDate(ord.getDate()-1);
   return{cls,del,ord,why,askSun:cls.getDay()===1||cls.getDay()===2}}
 function message(d,place,texts,tag){
   const head=(d?md(d)+(tag?' '+tag:'')+'. ':(tag?tag+'. ':''))+'入'+place+'材料如下：';
   return head+'\n'+texts.map((t,i)=>(i+1)+'. '+t).join('\n')+'\n非常感謝🙏'}
-const TIMES=['上午','下午'],KINDS=['示範','操作'];
-function detail(ses){return ses.filter(s=>RAW[s.set]&&s.n>0).slice().sort((a,b)=>TIMES.indexOf(a.time)-TIMES.indexOf(b.time)||KINDS.indexOf(a.kind)-KINDS.indexOf(b.kind)).map(s=>{const st=getSet(s.set);
-  return{time:s.time,kind:s.kind,set:s.set,n:s.n,title:s.time+'　'+s.kind+'　'+s.set+' ×'+s.n,dishes:st.d.join('、'),
-    rows:st.i.filter(it=>it.n&&it.q>0).map(it=>({n:it.n,per:frac(it.q)+it.u,tot:num(it.q*s.n)+it.u,stock:rule(it.n).c==='s'}))}})}
+function detail(ses){return(ses||[]).filter(s=>s&&own(RAW,s.set)&&cnt(s.n)>0).slice().sort((a,b)=>TIMES.indexOf(a.time)-TIMES.indexOf(b.time)||KINDS.indexOf(a.kind)-KINDS.indexOf(b.kind)).map(s=>{const st=getSet(s.set),n=cnt(s.n);
+  return{time:s.time,kind:s.kind,set:s.set,n,title:s.time+'　'+s.kind+'　'+s.set+' ×'+n,dishes:(st.d||[]).join('、'),
+    rows:st.i.filter(it=>it&&it.n&&snap(+it.q)>0).map(it=>{const q=snap(+it.q);return{n:it.n,per:frac(q)+it.u,tot:num(q*n)+it.u,stock:rule(it.n).c==='s'}})}})}
+/* ---- 讀取 localStorage、還原備份時的資料清理：型別不對的欄位丟掉或改回預設，避免頁面當掉或被塞入 HTML ---- */
+const keysOf=o=>isObj(o)?Object.keys(o).filter(k=>k!=='__proto__'):[];
+function cleanRule(r){if(!isObj(r))return null;const o={};
+  if(r.c==='o'||r.c==='s')o.c=r.c;if(RTYPES.includes(r.t))o.t=r.t;
+  ['a','u','f'].forEach(k=>{if(typeof r[k]==='string')o[k]=txt(r[k],40)});
+  if(r.r==='up'||r.r==='')o.r=r.r;
+  ['g','per'].forEach(k=>{if(pos(r[k]))o[k]=pos(r[k])});
+  if(r.min!=null&&r.min!==''&&isFinite(+r.min)&&+r.min>=0)o.min=+r.min;
+  return o}
+function cleanSet(st,id){if(!isObj(st)||!Array.isArray(st.i))return null;
+  return{d:own(RAW,id)?parseSet(RAW[id]).d:[],i:st.i.filter(isObj).map(it=>({n:txt(it.n,40).trim(),q:isFinite(+it.q)?+it.q:0,u:txt(it.u,20)})),p:txt(st.p,500)}}
+function cleanSes(s){s=isObj(s)?s:{};return{time:TIMES.includes(s.time)?s.time:TIMES[0],kind:KINDS.includes(s.kind)?s.kind:KINDS[1],set:own(RAW,s.set)?s.set:'',n:cnt(s.n)}}
+function cleanDraft(d){if(!isObj(d)||!Array.isArray(d.days))return null;
+  const days=d.days.filter(isObj).slice(0,60).map(x=>({date:sched(x.date)?x.date:'',sun:x.sun===true,ses:Array.isArray(x.ses)?x.ses.slice(0,50).map(cleanSes):[]}));
+  if(!days.length)return null;
+  const ed={};keysOf(d.ed).forEach(k=>{const e=d.ed[k];if(!isObj(e))return;const o={};
+    if(typeof e.text==='string'){o.text=txt(e.text,500);o.base=txt(e.base,500)}
+    if(typeof e.on==='boolean')o.on=e.on;if(e.st==='ok'||e.st==='order'||e.st==='')o.st=e.st;ed[k]=o});
+  const man={};keysOf(d.man).forEach(k=>{if(Array.isArray(d.man[k]))man[k]=d.man[k].filter(isObj).map(m=>({text:txt(m.text,500),on:m.on!==false}))});
+  return{days,ed,man,mode:MODES.includes(d.mode)?d.mode:'all',place:txt(d.place,20)||'中正'}}
+function cleanHist(h){if(!isObj(h)||typeof h.text!=='string')return null;
+  const o={t:+h.t||0,ses:txt(h.ses,2000),text:txt(h.text,20000)};
+  if(typeof h.title==='string')o.title=txt(h.title,500);if(typeof h.date==='string')o.date=txt(h.date,500);
+  const dr=cleanDraft(h.draft);if(dr)o.draft=dr;return o}
+function cleanState(v){v=isObj(v)?v:{};const rules={},sets={};
+  keysOf(v.rules).forEach(n=>{const r=cleanRule(v.rules[n]);if(r&&Object.keys(r).length)rules[n]=r});
+  keysOf(v.sets).forEach(id=>{if(!own(RAW,id))return;const st=cleanSet(v.sets[id],id);if(st)sets[id]=st});
+  return{place:txt(v.place,20)||'中正',head:HEADS.includes(v.head)?v.head:'del',rules,sets,
+    hist:(Array.isArray(v.hist)?v.hist:[]).map(cleanHist).filter(Boolean).slice(0,200),dirty:v.dirty===true,draft:cleanDraft(v.draft)}}
+// 判斷貼上的備份是不是另一個級別（丙級／乙級）的：有 app 標記就直接比對；舊備份沒有標記，就看裡面用到的題組代號
+function foreignBackup(v){if(!isObj(v))return false;if(typeof v.app==='string')return v.app!==APP;
+  const ids=keysOf(v.sets);
+  (Array.isArray(v.hist)?v.hist:[]).forEach(h=>{if(isObj(h)&&isObj(h.draft)&&Array.isArray(h.draft.days))h.draft.days.forEach(d=>{
+    if(isObj(d)&&Array.isArray(d.ses))d.ses.forEach(s=>{if(isObj(s)&&typeof s.set==='string'&&s.set)ids.push(s.set)})})});
+  return ids.length>0&&!ids.some(id=>own(RAW,id))}
 /*CORE-END*/
 
 const KEY='jiaohuo.v2';
 let D;
 const $=id=>document.getElementById(id);
-const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clone=o=>JSON.parse(JSON.stringify(o));
 const IDS=Object.keys(RAW);
 const p2=n=>String(n).padStart(2,'0');
@@ -339,16 +398,20 @@ const PLACES=['中正','仁武'];
 function newDraft(){return{days:[newDay(defDate())],ed:{},man:{},mode:'all',place:'中正'}}
 function curPlace(){return PLACES.includes(D.place)?D.place:'中正'}
 function drawPlace(){$('place').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.p===curPlace()))}
-function load(){try{let v=JSON.parse(localStorage.getItem(KEY)||'null');
-    if(!v){const o=JSON.parse(localStorage.getItem('jiaohuo.v1')||'null');if(o)v={place:o.place,head:o.head,rules:o.rules,sets:o.sets,hist:o.hist}}
-    if(v&&typeof v==='object')S=Object.assign(S,v)}catch(e){}
-  S.rules=S.rules||{};S.sets=S.sets||{};S.hist=Array.isArray(S.hist)?S.hist:[];
-  D=S.draft&&Array.isArray(S.draft.days)&&S.draft.days.length?S.draft:newDraft();
-  D.ed=D.ed||{};D.man=D.man||{};D.mode=D.mode||'all';S.draft=D}
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function load(){let v=null;try{v=JSON.parse(localStorage.getItem(KEY)||'null');
+    if(!v){const o=JSON.parse(localStorage.getItem('jiaohuo.v1')||'null');if(o)v={place:o.place,head:o.head,rules:o.rules,sets:o.sets,hist:o.hist}}}catch(e){v=null}
+  S=cleanState(v);D=S.draft||newDraft();S.draft=D}
+let saveWarned=false;
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(S));saveWarned=false}catch(e){
+  if(!saveWarned){saveWarned=true;toast('沒辦法存到這支手機（可能是空間滿了或無痕模式），請到紀錄頁產生備份。')}}}
 let toastT;function toast(msg){$('toast').textContent=msg;clearTimeout(toastT);toastT=setTimeout(()=>{$('toast').textContent=''},3500)}
-async function copyText(text,ta){try{await navigator.clipboard.writeText(text);return true}catch(e){
-  if(ta){ta.focus();ta.select();try{return document.execCommand('copy')}catch(e2){}}return false}}
+// 先用剪貼簿 API；不行就用暫時的 textarea + execCommand 複製「整段 text」，最後才選取畫面上的 ta 讓使用者手動複製
+async function copyText(text,ta){try{await navigator.clipboard.writeText(text);return true}catch(e){}
+  let ok=false;const tmp=document.createElement('textarea');tmp.value=text;tmp.setAttribute('readonly','');
+  tmp.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
+  document.body.appendChild(tmp);tmp.focus();tmp.select();tmp.setSelectionRange(0,text.length);
+  try{ok=document.execCommand('copy')}catch(e2){}tmp.remove();
+  if(!ok&&ta){ta.focus();ta.select()}return ok}
 
 /* ---- 上課日與課程 ---- */
 function schedHTML(d){const sc=sched(d.date,d.sun);if(!sc)return'<div class="sc">請選上課日期。</div>';
@@ -360,27 +423,32 @@ function drawDays(){
   $('days').innerHTML=D.days.map((d,di)=>'<div class="day sheet" data-d="'+di+'">'+
     '<div class="dh"><input type="date" data-k="date" value="'+esc(d.date)+'" aria-label="上課日期">'+(D.days.length>1?'<button class="x" data-rmday aria-label="刪除這一天">✕</button>':'')+'</div>'+
     '<div class="schw">'+schedHTML(d)+'</div>'+
-    d.ses.map((s,i)=>'<div class="ses" data-i="'+i+'" data-t="'+s.time+'">'+
+    d.ses.map((s,i)=>'<div class="ses" data-i="'+i+'" data-t="'+esc(s.time)+'">'+
       '<select data-k="time" aria-label="時段">'+TIMES.map(l=>'<option'+(l===s.time?' selected':'')+'>'+l+'</option>').join('')+'</select>'+
       '<select data-k="kind" aria-label="示範或操作">'+KINDS.map(l=>'<option'+(l===s.kind?' selected':'')+'>'+l+'</option>').join('')+'</select>'+
       '<select data-k="set" aria-label="題組">'+setOpts(s.set)+'</select>'+
       '<div class="stp"><button data-step="-1" aria-label="減少一份">−</button>'+
-      '<input data-k="n" type="number" min="0" step="1" inputmode="numeric" value="'+s.n+'" aria-label="份數">'+
+      '<input data-k="n" type="number" min="0" max="999" step="1" inputmode="numeric" value="'+esc(s.n)+'" aria-label="份數">'+
       '<button data-step="1" aria-label="增加一份">＋</button></div>'+
       '<button class="x" data-del aria-label="刪除這堂">✕</button>'+
       '<div class="dishes">'+esc(dishTxt(s))+'</div></div>').join('')+
     '<div class="acts"><button data-addses>加一堂</button></div></div>').join('');
 }
+// 手動加的項目和改過的字是跟著「入貨日」存的；改上課日期讓入貨日變了，就把它們搬到新的入貨日，不然會整批消失
+function dayKey(d){const sc=sched(d.date,d.sun);return sc?iso(sc.del):''}
+function moveGroupData(from,to){if(!from||!to||from===to||groups().some(g=>g.key===from))return;
+  if(own(D.man,from)){D.man[to]=(own(D.man,to)?D.man[to]:[]).concat(D.man[from]);delete D.man[from]}
+  Object.keys(D.ed).forEach(k=>{if(k.indexOf(from+'|')!==0)return;const nk=to+k.slice(from.length);if(!own(D.ed,nk))D.ed[nk]=D.ed[k];delete D.ed[k]})}
 $('days').addEventListener('change',e=>{const dc=e.target.closest('.day');if(!dc)return;const d=D.days[+dc.dataset.d],k=e.target.dataset.k;
-  if(k==='date'){d.date=e.target.value;dc.querySelector('.schw').innerHTML=schedHTML(d);drawCalc();return}
-  if(k==='sun'){d.sun=e.target.checked;dc.querySelector('.schw').innerHTML=schedHTML(d);drawCalc();return}
+  if(k==='date'||k==='sun'){const before=dayKey(d);if(k==='date')d.date=sched(e.target.value)?e.target.value:'';else d.sun=e.target.checked;
+    moveGroupData(before,dayKey(d));dc.querySelector('.schw').innerHTML=schedHTML(d);drawCalc();return}
   const row=e.target.closest('.ses');if(!row)return;const s=d.ses[+row.dataset.i];
-  if(k==='n')s.n=Math.max(0,+e.target.value||0);else s[k]=e.target.value;
+  if(k==='n'){s.n=cnt(e.target.value)}else if(k==='time'||k==='kind'||k==='set')s[k]=e.target.value;
   if(k==='kind'){if(s.kind==='示範')s.n=1;else if(s.n===1)s.n=5}
   drawDays();drawCalc()});
 $('days').addEventListener('click',e=>{const dc=e.target.closest('.day');if(!dc)return;const di=+dc.dataset.d,d=D.days[di];
   const sb=e.target.closest('[data-step]');
-  if(sb){const row=sb.closest('.ses'),s=d.ses[+row.dataset.i];s.n=Math.max(0,(+s.n||0)+(+sb.dataset.step));
+  if(sb){const row=sb.closest('.ses'),s=d.ses[+row.dataset.i];s.n=cnt((+s.n||0)+(+sb.dataset.step));
     row.querySelector('input[data-k=n]').value=s.n;row.querySelector('.dishes').textContent=dishTxt(s);drawCalc();return}
   if(e.target.closest('[data-del]')){d.ses.splice(+e.target.closest('.ses').dataset.i,1);drawDays();drawCalc();return}
   if(e.target.closest('[data-addses]')){const l=d.ses[d.ses.length-1];d.ses.push({time:l?l.time:'上午',kind:'示範',set:'',n:1});drawDays();drawCalc();return}
@@ -406,14 +474,16 @@ function drawDetail(){let h='';
 
 /* ---- 合計 ---- */
 function groups(){const m={};D.days.forEach(d=>{const sc=sched(d.date,d.sun);if(!sc)return;const k=iso(sc.del);
-    const g=m[k]||(m[k]={key:k,del:sc.del,ord:sc.ord,cls:[],days:[]});g.cls.push(sc.cls);g.days.push(d)});
-  return Object.values(m).sort((a,b)=>a.del-b.del)}
+    const g=m[k]||(m[k]={key:k,del:sc.del,ord:sc.ord,cls:[],days:[]});if(!g.cls.some(c=>+c===+sc.cls))g.cls.push(sc.cls);g.days.push(d)});
+  return Object.values(m).sort((a,b)=>a.del-b.del).map(g=>(g.cls.sort((a,b)=>a-b),g))}
+// 有排課卻沒選日期的天數：這些課不會算進任何一張叫貨單
+function undated(){return D.days.filter(d=>!sched(d.date,d.sun)&&d.ses.some(s=>own(RAW,s.set)&&cnt(s.n)>0)).length}
 function gSes(g){const t=D.mode==='am'?'上午':D.mode==='pm'?'下午':'';return g.days.flatMap(d=>d.ses).filter(s=>!t||s.time===t)}
 function gLines(g){const r=compute(gSes(g)),pre=g.key+'|'+D.mode+'|';
-  r.lines.forEach(l=>{l.key=pre+l.k;const e=D.ed[l.key]||{};l.edited=e.text!=null;l.shown=l.edited?e.text:l.text;l.stale=l.edited&&e.base!==l.text;
+  r.lines.forEach(l=>{l.key=pre+l.k;const e=own(D.ed,l.key)?D.ed[l.key]:{};l.edited=e.text!=null;l.shown=l.edited?e.text:l.text;l.stale=l.edited&&e.base!==l.text;
     if(l.stock){l.st=e.st||'';l.inc=l.st==='order'}else l.inc=e.on!=null?e.on:true});
   return r}
-function gMsg(g,r){const man=(D.man[g.key]||[]).filter(m=>m.on&&m.text.trim()).map(m=>m.text);
+function gMsg(g,r){const man=(own(D.man,g.key)?D.man[g.key]:[]).filter(m=>m.on&&m.text.trim()).map(m=>m.text);
   const t=r.lines.filter(l=>!l.stock&&l.inc&&l.shown.trim()).map(l=>l.shown).concat(man,r.lines.filter(l=>l.stock&&l.inc&&l.shown.trim()).map(l=>l.shown));
   if(!t.length)return'';
   const hd=S.head==='ord'?md(g.ord):S.head==='cls'?g.cls.map(md).join('、'):md(g.del);
@@ -428,9 +498,10 @@ function stockHTML(l){return'<div class="line sk'+(l.st?'':' un')+(l.st==='ok'?'
   '<input type="text" value="'+esc(l.shown)+'" aria-label="叫貨內容"><div class="hint">'+esc(l.hint)+'</div>'+staleHTML(l)+'</div>'}
 function drawGroups(){const gs=groups(),t0=new Date();t0.setHours(0,0,0,0);
   $('mode').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===D.mode));
-  $('groups').innerHTML=gs.map(g=>{const r=gLines(g),diff=Math.round((g.ord-t0)/864e5);
+  const nd=undated();
+  $('groups').innerHTML=(nd?'<div class="ban today nodate">有 '+nd+' 天排了課但還沒選上課日期，這些課不會算進叫貨單。</div>':'')+gs.map(g=>{const r=gLines(g),diff=Math.round((g.ord-t0)/864e5);
     const ban=diff<0?'<div class="ban late">叫貨日已經過了 '+(-diff)+' 天，請盡快聯絡老闆。</div>':diff===0?'<div class="ban today">今天就是叫貨日。</div>':'<div class="ban ok">距離叫貨日還有 '+diff+' 天。</div>';
-    const ol=r.lines.filter(l=>!l.stock),sl=r.lines.filter(l=>l.stock),man=D.man[g.key]||[],un=sl.filter(l=>!l.st).length;
+    const ol=r.lines.filter(l=>!l.stock),sl=r.lines.filter(l=>l.stock),man=own(D.man,g.key)?D.man[g.key]:[],un=sl.filter(l=>!l.st).length;
     return'<div class="grp sheet" data-g="'+g.key+'">'+
       '<div class="gh"><div class="k">叫貨日<b>'+mdw(g.ord)+'</b></div><div>入貨日<b>'+mdw(g.del)+'</b></div><div>上課日<b>'+g.cls.map(mdw).join('<br>')+'</b></div></div>'+ban+
       '<div class="sub">每次叫貨</div>'+(ol.map(lineHTML).join('')||'<div class="empty">這個時段沒有要叫的生鮮。</div>')+
@@ -440,15 +511,16 @@ function drawGroups(){const gs=groups(),t0=new Date();t0.setHours(0,0,0,0);
       (sl.map(stockHTML).join('')||'<div class="empty">沒有用到庫存類食材。</div>')+
       '<div class="sub">常備調味料</div><div class="pantry">'+(r.pantry.length?esc(r.pantry.join('、')):'沒有用到。')+'</div>'+
       '<div class="sub">LINE 訊息</div><textarea readonly data-msg="'+g.key+'">'+esc(gMsg(g,r))+'</textarea>'+
-      '<div class="gacts"><button data-copy>複製這則</button></div></div>'}).join('')||'<div class="empty sheet">選好上課日期和題組後，這裡會算出要叫的量。</div>';
+      '<div class="gacts"><button data-copy>複製這則</button></div></div>'}).join('')+(gs.length?'':'<div class="empty sheet">選好上課日期和題組後，這裡會算出要叫的量。</div>');
   updateBar(gs)}
 function refreshMsgs(){const gs=groups();gs.forEach(g=>{const ta=document.querySelector('textarea[data-msg="'+g.key+'"]');if(ta)ta.value=gMsg(g,gLines(g))});updateBar(gs)}
 function updateBar(gs){let n=0,items=0,un=0,first='';gs.forEach(g=>{const r=gLines(g),m=gMsg(g,r);if(m){n++;items+=m.split('\n').length-2}
     const u=r.lines.filter(l=>l.stock&&!l.st).length;if(u&&!first)first=g.key;un+=u});
-  $('barInfo').innerHTML=(n?n+' 則訊息，共 '+items+' 項':'還沒有內容')+(un?'<a href="#sk-'+first+'">庫存還有 '+un+' 項沒確認</a>':'');
+  const nd=undated();
+  $('barInfo').innerHTML=(n?n+' 則訊息，共 '+items+' 項':'還沒有內容')+(un?'<a href="#sk-'+first+'">庫存還有 '+un+' 項沒確認</a>':'')+(nd?'<a href="#days">有 '+nd+' 天沒選日期</a>':'');
   $('copyAll').textContent=n>1?'複製全部 '+n+' 則':'複製訊息';persist()}
 function drawCalc(){drawDetail();drawGroups()}
-function edOf(key){return D.ed[key]||(D.ed[key]={})}
+function edOf(key){return own(D.ed,key)?D.ed[key]:(D.ed[key]={})}
 function onGroupInput(e){const row=e.target.closest('.line');if(!row)return;const gk=e.target.closest('.grp').dataset.g;
   if(row.dataset.man!=null){const m=D.man[gk][+row.dataset.man];if(e.target.type==='checkbox'){m.on=e.target.checked;row.classList.toggle('off',!m.on)}else m.text=e.target.value;refreshMsgs();return}
   const key=row.dataset.key,base=row.dataset.base,ed=edOf(key);
@@ -462,7 +534,7 @@ $('groups').addEventListener('click',async e=>{const gc=e.target.closest('.grp')
   const st=e.target.closest('[data-st]');
   if(st){const ed=edOf(row.dataset.key);ed.st=ed.st===st.dataset.st?'':st.dataset.st;const y=window.scrollY;drawGroups();window.scrollTo(0,y);return}
   if(e.target.closest('[data-usenew]')){const ed=edOf(row.dataset.key);delete ed.text;delete ed.base;const y=window.scrollY;drawGroups();window.scrollTo(0,y);return}
-  if(e.target.closest('[data-addman]')){(D.man[gk]||(D.man[gk]=[])).push({text:'',on:true});drawGroups();
+  if(e.target.closest('[data-addman]')){(own(D.man,gk)?D.man[gk]:(D.man[gk]=[])).push({text:'',on:true});drawGroups();
     const a=document.querySelectorAll('.grp[data-g="'+gk+'"] .line[data-man] input[type=text]');a[a.length-1].focus();return}
   if(e.target.closest('[data-copy]')){const ta=gc.querySelector('textarea');if(!ta.value){toast('這則還沒有內容。');return}
     toast(await copyText(ta.value,ta)?'已複製，貼到 LINE 即可。':'無法自動複製，請長按訊息文字後選「全選、複製」。')}});
@@ -480,8 +552,8 @@ $('save').onclick=()=>{const gs=groups(),t=allMsgs();if(!t.length){toast('還沒
 const TYPES={sum:'加總後進位',spec:'依每份規格列出',jin:'換算成台斤',pack:'整包／整條叫',fixed:'固定寫法'};
 function ruleSum(n){const r=rule(n);
   if(r.t==='spec')return'每份規格 ✖️ 份數';
-  if(r.t==='jin')return'以斤叫'+((+r.g||1)!==1?'，每'+(unitOf(n)||'個')+'約 '+r.g+'g':'')+(r.r==='up'?'，無條件進位':'，四捨五入到半斤');
-  if(r.t==='pack')return'1'+(r.u||'個')+'可供 '+r.per+(unitOf(n)||'份');
+  if(r.t==='jin')return'以斤叫'+((pos(r.g)||1)!==1?'，每'+(unitOf(n)||'個')+'約 '+pos(r.g)+'g':'')+(r.r==='up'?'，無條件進位':'，四捨五入到半斤');
+  if(r.t==='pack')return'1'+(r.u||'個')+'可供 '+(pos(r.per)||1)+(unitOf(n)||'份');
   if(r.t==='fixed')return'一律寫「'+(r.f||'')+'」';
   return'加總進位到整數'+(r.min?'，最少 '+r.min:'')}
 function ruleForm(n){const r=rule(n),f=(k,lab,type)=>'<div><label>'+lab+'</label><input data-k="'+k+'" type="'+(type||'text')+'" value="'+esc(r[k]==null?'':r[k])+'"></div>';
@@ -490,25 +562,30 @@ function ruleForm(n){const r=rule(n),f=(k,lab,type)=>'<div><label>'+lab+'</label
    '<div><label>叫法</label><select data-k="t">'+Object.keys(TYPES).map(k=>'<option value="'+k+'"'+(r.t===k?' selected':'')+'>'+TYPES[k]+'</option>').join('')+'</select></div>'+
    f('a','LINE 上的名稱（空白＝原名）');
   if(r.t==='sum')h+=f('u','單位（可空白）')+f('min','最少叫多少','number');
-  if(r.t==='jin')h+=f('g','每 1'+(unitOf(n)||'個')+'約幾克（本身是 g 填 1）','number')+
+  if(r.t==='jin')h+=f('g','每 1'+esc(unitOf(n)||'個')+'約幾克（本身是 g 填 1）','number')+
    '<div><label>進位</label><select data-k="r"><option value=""'+(r.r!=='up'?' selected':'')+'>四捨五入到半斤</option><option value="up"'+(r.r==='up'?' selected':'')+'>無條件進位</option></select></div>';
-  if(r.t==='pack')h+=f('per','1 包（條、罐）可供多少'+(unitOf(n)||'份'),'number')+f('u','叫貨單位，例如 包');
+  if(r.t==='pack')h+=f('per','1 包（條、罐）可供多少'+esc(unitOf(n)||'份'),'number')+f('u','叫貨單位，例如 包');
   if(r.t==='fixed')h+=f('f','固定寫法，例如 30元');
   return h+'<div class="wide"><button data-reset>還原這項預設</button></div></div>'}
-function drawRules(open){$('rules').innerHTML=allNames().map(n=>{const r=rule(n),mine=!!S.rules[n];
+function drawRules(open){$('rules').innerHTML=allNames().map(n=>{const r=rule(n),mine=own(S.rules,n);
   return'<details'+(n===open?' open':'')+'><summary><span>'+esc(n)+(r.c==='s'?'<span class="tag">查庫存</span>':'')+(mine?'<span class="tag">已自訂</span>':'')+'</span><span class="sum">'+esc(ruleSum(n))+'</span></summary>'+ruleForm(n)+'</details>'}).join('')}
 function markDirty(){S.dirty=true;drawDirty()}
 function drawDirty(){$('bkwarn').hidden=!S.dirty;$('dot').textContent=S.dirty?' ●':''}
+// 數字欄位清空＝用預設值；0 或負數（「最少叫多少」可以填 0）視為打錯，也改回預設值
+function ruleEdit(n,k,el){const o=Object.assign({},own(S.rules,n)?S.rules[n]:{});let bad=false;
+  if(el.type==='number'){const raw=el.value.trim(),v=+raw;
+    if(raw===''||!isFinite(v)){delete o[k];bad=raw!==''}else if(k==='min'?v<0:v<=0){delete o[k];bad=true}else o[k]=v}
+  else o[k]=el.value.trim();
+  if(Object.keys(o).length)S.rules[n]=o;else delete S.rules[n];return bad}
 $('rules').addEventListener('change',e=>{const f=e.target.closest('.f');if(!f||!e.target.dataset.k)return;const n=f.dataset.n,k=e.target.dataset.k;
-  let v=e.target.value;if(e.target.type==='number')v=v===''?undefined:+v;
-  S.rules[n]=Object.assign({},S.rules[n],{[k]:v});markDirty();drawRules(n);drawCalc();toast('已更新「'+n+'」。記得到紀錄頁備份。')});
+  const bad=ruleEdit(n,k,e.target);markDirty();drawRules(n);drawCalc();toast(bad?'「'+n+'」這個數字不合理，已改回預設值。':'已更新「'+n+'」。記得到紀錄頁備份。')});
 $('rules').addEventListener('click',e=>{if(e.target.dataset.reset!==undefined){const n=e.target.closest('.f').dataset.n;delete S.rules[n];markDirty();drawRules(n);drawCalc()}});
 
 /* ---- 配菜表 ---- */
 function curSet(){return $('setPick').value}
 function drawSet(){const st=getSet(curSet());
   $('items').innerHTML=st.i.map((it,i)=>'<div class="it" data-i="'+i+'"><input data-k="n" value="'+esc(it.n)+'" aria-label="材料名稱">'+
-   '<input data-k="q" type="number" step="any" inputmode="decimal" value="'+it.q+'" aria-label="每份數量"><input data-k="u" value="'+esc(it.u)+'" aria-label="單位">'+
+   '<input data-k="q" type="number" step="any" inputmode="decimal" value="'+esc(it.q)+'" aria-label="每份數量"><input data-k="u" value="'+esc(it.u)+'" aria-label="單位">'+
    '<button class="x" data-del aria-label="刪除">✕</button></div>').join('');
   $('setPantry').value=st.p}
 function editSet(fn){const id=curSet(),st=clone(getSet(id));fn(st);S.sets[id]=st;markDirty();drawDays();drawCalc()}
@@ -529,12 +606,16 @@ function drawHist(){$('hist').innerHTML=S.hist.map((h,i)=>'<div class="hist" dat
 $('hist').addEventListener('click',async e=>{const row=e.target.closest('.hist');if(!row)return;const i=+row.dataset.i;
   if(e.target.dataset.del!==undefined){if(confirm('刪除這筆紀錄？')){S.hist.splice(i,1);persist();drawHist()}}
   if(e.target.dataset.cp!==undefined)toast(await copyText(S.hist[i].text)?'已複製。':'無法自動複製，請展開訊息後長按複製。');
-  if(e.target.dataset.ld!==undefined){D=clone(S.hist[i].draft);S.draft=D;drawAll();go('order');toast('已載入。要沿用到新的日期，直接改上課日期即可。')}});
-async function doBackup(){const o=clone(S);delete o.draft;const t=JSON.stringify(o);$('bk').value=t;const ok=await copyText(t,$('bk'));S.dirty=false;persist();drawDirty();
+  if(e.target.dataset.ld!==undefined){const dr=cleanDraft(S.hist[i].draft);if(!dr){toast('這筆紀錄沒有可以載入的內容。');return}
+    D=dr;S.draft=D;drawAll();go('order');toast('已載入。要沿用到新的日期，直接改上課日期即可。')}});
+async function doBackup(){const o=clone(S);delete o.draft;o.app=APP;const t=JSON.stringify(o);$('bk').value=t;const ok=await copyText(t,$('bk'));S.dirty=false;persist();drawDirty();
   toast(ok?'備份文字已複製，請貼到 LINE 記事本保存。':'備份文字在下方，請長按全選後複製保存。')}
 $('bkOut').onclick=doBackup;$('bkNow').onclick=doBackup;
-$('bkIn').onclick=()=>{try{const v=JSON.parse($('bk').value);if(!v||typeof v!=='object'||Array.isArray(v))throw 0;
-  S=Object.assign({place:'中正',head:'del',rules:{},sets:{},hist:[],dirty:false,draft:D},v);S.draft=D;S.dirty=false;persist();drawAll();toast('已還原。')}catch(e){toast('這段文字不是有效的備份，請確認有完整貼上。')}};
+$('bkIn').onclick=()=>{let v=null;try{v=JSON.parse($('bk').value.trim())}catch(e){}
+  if(!isObj(v)){toast('這段文字不是有效的備份，請確認有完整貼上。');return}
+  if(foreignBackup(v)){toast('這是'+(own(APPS,v.app)?APPS[v.app]:'另一個級別')+'叫貨單的備份，請到那一頁還原（這一頁是'+APPS[APP]+'）。');return}
+  if(!confirm('還原後，目前的規則、配菜表修改和紀錄都會換成備份裡的內容，確定嗎？'))return;
+  S=cleanState(v);S.draft=D;S.dirty=false;persist();drawAll();toast('已還原。')};
 $('wipe').onclick=()=>{if(confirm('規則、配菜表修改和紀錄都會清掉，確定嗎？')){S={place:'中正',head:'del',rules:{},sets:{},hist:[],dirty:false,draft:null};D=newDraft();S.draft=D;persist();drawAll();toast('已還原成預設。')}};
 
 function go(tab){document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab));
